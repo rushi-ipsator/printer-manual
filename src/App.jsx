@@ -13,6 +13,11 @@ import {
   X,
   Lock,
   RefreshCw,
+  Minus,
+  Type,
+  List,
+  SlidersHorizontal,
+  ArrowRight,
 } from "lucide-react";
 
 const PRIMARY = "#dc2626";
@@ -227,33 +232,133 @@ const PRINTER_META = {
   error: { color: PRIMARY, bg: "#fef2f2", dot: PRIMARY, label: "Printer not connected", Icon: AlertTriangle },
 };
 
+// ---------- step card (numbered section for the guided left-hand panel) ----------
+function StepCard({ number, icon: Icon, title, hint, children }) {
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+        <div
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 999,
+            background: PRIMARY,
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12.5,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {number}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: SECONDARY, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+            {Icon && <Icon size={15} color={PRIMARY} />} {title}
+          </h2>
+          {hint && <p style={{ fontSize: 12, color: "#71717a", margin: "3px 0 0", lineHeight: 1.45 }}>{hint}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ---------- font size stepper control ----------
+function FontSizeControl({ label, value, onDec, onInc, disabled, min, max }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <span style={{ fontSize: 13, color: SECONDARY, fontWeight: 600 }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button
+          onClick={onDec}
+          disabled={disabled || value <= min}
+          title="Decrease"
+          style={{ ...stepperBtnStyle, opacity: disabled || value <= min ? 0.4 : 1, cursor: disabled || value <= min ? "not-allowed" : "pointer" }}
+        >
+          <Minus size={14} color={SECONDARY} />
+        </button>
+        <span style={{ fontSize: 13, color: SECONDARY, width: 36, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+          {value}px
+        </span>
+        <button
+          onClick={onInc}
+          disabled={disabled || value >= max}
+          title="Increase"
+          style={{ ...stepperBtnStyle, opacity: disabled || value >= max ? 0.4 : 1, cursor: disabled || value >= max ? "not-allowed" : "pointer" }}
+        >
+          <Plus size={14} color={SECONDARY} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- label row ----------
-function LabelRow({ field }) {
-  const text = `${field.key || "KEY"}:${field.value || ""}`;
-  const [ref, fontSize] = useAutoFit(text, { max: 14, min: 6.5 });
+// key and value each start at their own user-set base size. If the line would
+// wrap onto extra lines / overflow the label, both shrink together (keeping
+// their relative ratio) until it fits. Otherwise they print exactly at the
+// size the client chose.
+const ROW_MIN_FACTOR = 0.35;
+
+function LabelRow({ field, keyBase, valueBase }) {
+  const containerRef = useRef(null);
+  const keyRef = useRef(null);
+  const valueRef = useRef(null);
+  const [factor, setFactor] = useState(1);
   const key = (field.key || "").trim();
   const value = (field.value || "").trim();
+  const dep = `${key}|${value}|${keyBase}|${valueBase}`;
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    const kEl = keyRef.current;
+    const vEl = valueRef.current;
+    if (!el || !kEl || !vEl) return;
+
+    const apply = (f) => {
+      kEl.style.fontSize = keyBase * f + "px";
+      vEl.style.fontSize = valueBase * f + "px";
+    };
+    let f = 1;
+    apply(f);
+    let guard = 0;
+    const overflowing = () => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+    while (overflowing() && f > ROW_MIN_FACTOR && guard < 120) {
+      f -= 0.02;
+      apply(f);
+      guard++;
+    }
+    setFactor(f);
+  }, [dep]);
+
   return (
     <div className="label-row">
-      <div ref={ref} className="label-row-text" style={{ fontSize }}>
-        <span style={{ fontWeight: 700 }}>{key || "(untitled)"}</span>
-        <span style={{ margin: "0 4px" }}>:</span>
-        <span>{value || "—"}</span>
+      <div ref={containerRef} className="label-row-text">
+        <span ref={keyRef} style={{ fontWeight: 700, fontSize: keyBase * factor }}>
+          {key || "(untitled)"}
+        </span>
+        <span style={{ margin: "0 4px", fontSize: valueBase * factor }}>:</span>
+        <span ref={valueRef} style={{ fontSize: valueBase * factor }}>
+          {value || "—"}
+        </span>
       </div>
     </div>
   );
 }
 
 // ---------- label markup (shared by on-screen preview and the hidden print copy) ----------
-function LabelMarkup({ companyName, fields, onOverflowChange }) {
-  const [headerRef, headerFontSize] = useAutoFit(companyName, { max: 13, min: 8 });
+function LabelMarkup({ companyName, fields, keyFontSize, valueFontSize, onOverflowChange }) {
+  const [headerRef, headerFontSize] = useAutoFit(companyName, { max: 26, min: 16 });
   const bodyRef = useRef(null);
 
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el || !onOverflowChange) return;
     onOverflowChange(el.scrollHeight > el.clientHeight + 1);
-  }, [fields, companyName, onOverflowChange]);
+  }, [fields, companyName, keyFontSize, valueFontSize, onOverflowChange]);
 
   return (
     <div style={labelBoxStyle}>
@@ -262,7 +367,7 @@ function LabelMarkup({ companyName, fields, onOverflowChange }) {
       </div>
       <div ref={bodyRef} style={labelBodyStyle}>
         {fields.map((f) => (
-          <LabelRow key={f.id} field={f} />
+          <LabelRow key={f.id} field={f} keyBase={keyFontSize} valueBase={valueFontSize} />
         ))}
       </div>
     </div>
@@ -279,6 +384,13 @@ export default function App() {
   const [addError, setAddError] = useState("");
   const [lastEdited, setLastEdited] = useState(null);
   const [bodyOverflow, setBodyOverflow] = useState(false);
+
+  const MIN_FONT = 40;
+  const MAX_FONT = 36;
+  const [keyFontSize, setKeyFontSize] = useState(18);
+  const [valueFontSize, setValueFontSize] = useState(16);
+  const bumpKeyFont = (delta) => setKeyFontSize((s) => Math.min(MAX_FONT, Math.max(MIN_FONT, s + delta)));
+  const bumpValueFont = (delta) => setValueFontSize((s) => Math.min(MAX_FONT, Math.max(MIN_FONT, s + delta)));
 
   const [printerState, setPrinterState] = useState("idle");
   const [printLog, setPrintLog] = useState([]);
@@ -603,6 +715,18 @@ export default function App() {
           </div>
 
           <div style={cardStyle}>
+            <h2 style={sectionTitle}>Text size</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <FontSizeControl label="Key size" value={keyFontSize} onDec={() => bumpKeyFont(-1)} onInc={() => bumpKeyFont(1)} disabled={locked} min={MIN_FONT} max={MAX_FONT} />
+              <FontSizeControl label="Value size" value={valueFontSize} onDec={() => bumpValueFont(-1)} onInc={() => bumpValueFont(1)} disabled={locked} min={MIN_FONT} max={MAX_FONT} />
+            </div>
+            <p style={{ fontSize: 11, color: "#a1a1aa", margin: "10px 0 0" }}>
+              This is the size each row starts at. If a line is too long and would wrap or overflow the
+              label, it shrinks automatically — otherwise it prints exactly at the size you set.
+            </p>
+          </div>
+
+          <div style={cardStyle}>
             <h2 style={sectionTitle}>Fields</h2>
             {fields.length === 0 && (
               <div style={{ fontSize: 13, color: "#a1a1aa", marginBottom: 8 }}>No fields yet — add one below.</div>
@@ -803,7 +927,13 @@ export default function App() {
                   boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
                 }}
               >
-                <LabelMarkup companyName={companyName} fields={fields} onOverflowChange={setBodyOverflow} />
+                <LabelMarkup
+                  companyName={companyName}
+                  fields={fields}
+                  keyFontSize={keyFontSize}
+                  valueFontSize={valueFontSize}
+                  onOverflowChange={setBodyOverflow}
+                />
               </div>
             </div>
           </div>
@@ -867,7 +997,7 @@ export default function App() {
     {/* Always rendered off-canvas so its auto-fit measurements stay accurate;
         only this element becomes visible when printing (see .print-only CSS). */}
     <div className="print-only">
-      <LabelMarkup companyName={companyName} fields={fields} />
+      <LabelMarkup companyName={companyName} fields={fields} keyFontSize={keyFontSize} valueFontSize={valueFontSize} />
     </div>
     </>
   );
@@ -921,6 +1051,16 @@ const iconBtnStyle = {
   cursor: "pointer",
   display: "flex",
   flexShrink: 0,
+};
+
+const stepperBtnStyle = {
+  background: "#fff",
+  border: "1px solid #e4e4e7",
+  borderRadius: 6,
+  padding: 5,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 const labelBoxStyle = {
